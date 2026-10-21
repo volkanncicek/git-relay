@@ -45,6 +45,7 @@ import tomllib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Self
 
 # --------------------------------------------------------------------------------
 # Logging
@@ -191,7 +192,7 @@ class TargetLock:
         self.path = base / f"git-relay-{name}.{uid}.lock"
         self._fd: int | None = None
 
-    def __enter__(self) -> TargetLock:
+    def __enter__(self) -> Self:
         self._fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
         try:
             if os.name == "nt":
@@ -258,6 +259,7 @@ def git(repo: Path, *args: str, key: Path | None = None, check: bool = True) -> 
         capture_output=True,
         encoding="utf-8",
         env=env,
+        check=False,
     )
     if check and proc.returncode != 0:
         detail = (proc.stderr or proc.stdout).strip()
@@ -396,6 +398,7 @@ def _check_update_instead(t: Target) -> None:
         ],
         capture_output=True,
         encoding="utf-8",
+        check=False,
     )
     # `config --get` exits 1 for an unset key, which is not an error worth reporting
     # as one; only the value matters.

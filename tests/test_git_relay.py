@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import git_relay  # noqa: E402
+import git_relay
 
 # Captured before the autouse fixture below stubs it out, so the check can still be
 # tested on its own.
@@ -34,6 +34,7 @@ def run(repo: Path, *args: str) -> str:
         ["git", "-C", str(repo), *args],
         capture_output=True,
         encoding="utf-8",
+        check=False,
         env={
             "GIT_AUTHOR_NAME": "t",
             "GIT_AUTHOR_EMAIL": "t@t",
@@ -188,6 +189,7 @@ def test_dry_run_would_have_missed_a_refusing_host(world):
         ["git", "-C", str(world.ws), "push", str(world.host), "master"],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert proc.returncode != 0
     assert "denyCurrentBranch" in proc.stderr
@@ -263,7 +265,10 @@ def test_a_paused_rebase_is_named_rather_than_called_dirty(world):
     (world.ws / "a.txt").write_text("master edit", encoding="utf-8")
     run(world.ws, "commit", "-am", "master change")
     proc = subprocess.run(
-        ["git", "-C", str(world.ws), "rebase", "side"], capture_output=True, text=True
+        ["git", "-C", str(world.ws), "rebase", "side"],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert proc.returncode != 0, "expected a conflict to set up the state under test"
 
@@ -384,10 +389,12 @@ def test_missing_required_key_names_the_key(tmp_path, monkeypatch):
 def test_second_run_is_refused_while_the_first_holds_the_lock(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
     monkeypatch.setenv("TEMP", str(tmp_path))
-    with git_relay.TargetLock("t"):
-        with pytest.raises(git_relay.Abort, match="Another run is in progress"):
-            with git_relay.TargetLock("t"):
-                pass
+    with (
+        git_relay.TargetLock("t"),
+        pytest.raises(git_relay.Abort, match="Another run is in progress"),
+        git_relay.TargetLock("t"),
+    ):
+        pass
 
 
 def test_lock_is_released_after_the_block(monkeypatch, tmp_path):
