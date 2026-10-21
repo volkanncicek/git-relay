@@ -33,7 +33,7 @@ def run(repo: Path, *args: str) -> str:
     proc = subprocess.run(
         ["git", "-C", str(repo), *args],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         env={
             "GIT_AUTHOR_NAME": "t",
             "GIT_AUTHOR_EMAIL": "t@t",
@@ -325,6 +325,18 @@ def test_host_tracking_ref_follows_origin(world):
         world.origin, "rev-parse", "master"
     )
     assert "ahead" not in run(world.host, "status", "-sb")
+
+
+def test_a_non_ascii_commit_message_is_relayed(world):
+    """git writes commit messages as UTF-8, but `text=True` decodes with the locale's
+    code page. On a cp1252 Windows box the 0x8D byte inside this emoji has no mapping,
+    so the subprocess call raised UnicodeDecodeError and the run died with a traceback
+    instead of an Abort."""
+    (world.host / "h.txt").write_text("x", encoding="utf-8")
+    run(world.host, "add", "h.txt")
+    run(world.host, "commit", "-m", "café 😍")
+    git_relay.sync(world.target, dry_run=False)
+    assert run(world.origin, "log", "-1", "--format=%s", "master") == "café 😍"
 
 
 def test_dirty_host_is_refused_by_git_itself(world):

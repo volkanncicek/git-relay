@@ -250,10 +250,13 @@ def git(repo: Path, *args: str, key: Path | None = None, check: bool = True) -> 
         env["GIT_SSH_COMMAND"] = _ssh_command(key)
     # Never let a pager or a credential prompt block a non-interactive run.
     env["GIT_TERMINAL_PROMPT"] = "0"
+    # UTF-8 explicitly, not text=True: git writes commit messages as UTF-8, and the
+    # locale code page (cp1252 on Windows) has no mapping for some of those bytes, so
+    # an emoji in a commit subject crashed `log --oneline` with UnicodeDecodeError.
     proc = subprocess.run(
         ["git", "-C", str(repo), "--no-pager", *args],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         env=env,
     )
     if check and proc.returncode != 0:
@@ -392,7 +395,7 @@ def _check_update_instead(t: Target) -> None:
             f"git -C {shlex.quote(t.remote_path)} config --get receive.denyCurrentBranch",
         ],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
     )
     # `config --get` exits 1 for an unset key, which is not an error worth reporting
     # as one; only the value matters.
