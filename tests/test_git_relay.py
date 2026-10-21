@@ -315,6 +315,18 @@ def test_divergent_sides_both_survive(world):
     assert "h.txt" in tree and "w.txt" in tree
 
 
+def test_host_tracking_ref_follows_origin(world):
+    """The host never fetches from origin, so without this its `git status` reports
+    itself ever further ahead of an origin/master frozen at the day it was cloned."""
+    commit(world.host, "h.txt")
+    commit(world.ws, "w.txt")
+    git_relay.sync(world.target, dry_run=False)
+    assert run(world.host, "rev-parse", "origin/master") == run(
+        world.origin, "rev-parse", "master"
+    )
+    assert "ahead" not in run(world.host, "status", "-sb")
+
+
 def test_dirty_host_is_refused_by_git_itself(world):
     """This replaces the old remote pre-flight: git refuses rather than us checking."""
     (world.host / "a.txt").write_text("host edit", encoding="utf-8")
@@ -328,9 +340,11 @@ def test_dry_run_changes_nothing(world):
     commit(world.ws, "w.txt")
     before_origin = run(world.origin, "rev-parse", "master")
     before_host = run(world.host, "rev-parse", "master")
+    before_host_tracking = run(world.host, "rev-parse", "origin/master")
     git_relay.sync(world.target, dry_run=True)
     assert run(world.origin, "rev-parse", "master") == before_origin
     assert run(world.host, "rev-parse", "master") == before_host
+    assert run(world.host, "rev-parse", "origin/master") == before_host_tracking
 
 
 # --------------------------------------------------------------------------------

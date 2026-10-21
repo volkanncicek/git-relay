@@ -526,9 +526,15 @@ def sync(t: Target, dry_run: bool) -> None:
         info("Nothing to push to origin")
 
     # 4. Host. Always attempted, even with nothing outgoing: the host may be behind
-    #    because a previous run stopped here.
+    #    because a previous run stopped here. The host never fetches from origin, so its
+    #    origin/<branch> is set from ours too; otherwise `git status` there reports it
+    #    ever further ahead of the day it was cloned. Forced, as a fetch refspec would be:
+    #    it mirrors origin, and an origin rewritten under it must not stop the run.
     info("Pushing to the host")
-    args = ["push", t.remote_url, f"HEAD:{branch}"] + (["--dry-run"] if dry_run else [])
+    tracking = f"refs/remotes/origin/{branch}"
+    args = ["push", t.remote_url, f"HEAD:{branch}", f"+{tracking}:{tracking}"] + (
+        ["--dry-run"] if dry_run else []
+    )
     git(t.local_path, *args, key=t.remote_ssh_key)
 
     ok(f"{'Dry run finished' if dry_run else 'Sync completed'} for {t.name}")

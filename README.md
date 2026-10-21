@@ -53,7 +53,7 @@ Each run does:
 2. **Remote pre-flight.** Refuse unless the host has the right branch checked out. ([Why this matters.](#why-the-remote-pre-flight-exists))
 3. **Fetch from the host**, and rebase onto anything committed there.
 4. **Fetch from origin**, and rebase onto it.
-5. **Push to origin**, then **push to the host**.
+5. **Push to origin**, then **push to the host**. The host never fetches from origin, so the same push also moves the host's `origin/<branch>` to match, keeping its `git status` from counting itself ahead of a stale origin.
 
 Commits are yours to make. The tool never creates one, so nothing enters history that you did not write.
 
