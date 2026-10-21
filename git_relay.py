@@ -47,6 +47,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Self
 
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
+
 # --------------------------------------------------------------------------------
 # Logging
 # --------------------------------------------------------------------------------
@@ -65,7 +70,7 @@ _C = {
 
 
 def _log(colour: str, level: str, msg: str, stream=sys.stdout) -> None:
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{stamp}] [{level}] {msg}"
     print(f"{_C[colour]}{line}{_C['off']}" if _TTY else line, file=stream, flush=True)
 
@@ -126,7 +131,7 @@ def _require(table: dict, section: str, key: str, path: Path) -> str:
     try:
         value = table[section][key]
     except KeyError:
-        raise Abort(f"{path}: missing required key [{section}] {key}")
+        raise Abort(f"{path}: missing required key [{section}] {key}") from None
     if not isinstance(value, str) or not value.strip():
         raise Abort(f"{path}: [{section}] {key} must be a non-empty string")
     return value
@@ -140,7 +145,7 @@ def load_target(name: str, explicit: Path | None = None) -> Target:
         with path.open("rb") as fh:
             data = tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
-        raise Abort(f"{path}: invalid TOML -- {exc}")
+        raise Abort(f"{path}: invalid TOML -- {exc}") from exc
 
     target = Target(
         name=name,
@@ -188,35 +193,29 @@ class TargetLock:
         base = Path(
             os.environ.get("XDG_RUNTIME_DIR") or os.environ.get("TEMP") or "/tmp"
         )
-        uid = os.getuid() if hasattr(os, "getuid") else os.getpid()  # nt has no uid
+        uid = os.getpid() if sys.platform == "win32" else os.getuid()  # nt has no uid
         self.path = base / f"git-relay-{name}.{uid}.lock"
         self._fd: int | None = None
 
     def __enter__(self) -> Self:
         self._fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
         try:
-            if os.name == "nt":
-                import msvcrt
-
+            if sys.platform == "win32":
                 msvcrt.locking(self._fd, msvcrt.LK_NBLCK, 1)
             else:
-                import fcntl
-
                 fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
+        except OSError as exc:
             os.close(self._fd)
             self._fd = None
             raise Abort(
                 f"Another run is in progress for this target (lock: {self.path})"
-            )
+            ) from exc
         return self
 
     def __exit__(self, *_exc) -> None:
         if self._fd is not None:
             try:
-                if os.name == "nt":
-                    import msvcrt
-
+                if sys.platform == "win32":
                     os.lseek(self._fd, 0, os.SEEK_SET)
                     msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
             finally:

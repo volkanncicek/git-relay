@@ -4,7 +4,22 @@ version = "0.1.0"
 description = "Relay commits between a network-isolated host and a git origin, over plain git+SSH"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Volkan Çiçek" }]
+keywords = ["git", "ssh", "sync", "relay", "air-gapped", "deployment"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    # Do not add a `License :: OSI Approved` classifier here: PyPI rejects an upload that pairs one with the `license` expression above.
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: System :: Systems Administration",
+]
 # No runtime dependencies on purpose: the tool orchestrates the `git` and `ssh` that
 # are already on the machine, and everything else it needs (tomllib, argparse) is in
 # the standard library. That is what lets it run anywhere git runs, Windows included.
@@ -14,19 +29,34 @@ dependencies = []
 git-relay = "git_relay:main"
 
 [project.urls]
-Homepage = "https://github.com/volkanncicek/git-relay"
+Repository = "https://github.com/volkanncicek/git-relay"
+Issues = "https://github.com/volkanncicek/git-relay/issues"
+Changelog = "https://github.com/volkanncicek/git-relay/blob/main/CHANGELOG.md"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+    "ty>=0.0.90",
+]
 
 [build-system]
-requires = ["hatchling"]
+# 1.27 is the first release that understands the PEP 639 `license` / `license-files` fields above; an older one rejects them as "license should be a table".
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 only-include = ["git_relay.py"]
 sources = ["."]
 
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "UP", "B", "SIM", "RUF", "PTH", "C4", "TID", "DTZ", "PL"]
+ignore = [
+    "E501",     # The formatter owns line width, and it leaves long message strings whole rather than splitting a sentence mid-phrase.
+    "PLR2004",  # Magic values. A literal read in place beats a constant read somewhere else.
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# `--strict-config` turns a typo in this very table into an error instead of a silently ignored setting.
+addopts = "-q --strict-markers --strict-config"
