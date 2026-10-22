@@ -1,6 +1,6 @@
 [project]
 name = "git-relay"
-version = "0.1.0"
+version = "0.1.1"
 description = "Relay commits between a network-isolated host and a git origin, over plain git+SSH"
 readme = "README.md"
 requires-python = ">=3.11"
