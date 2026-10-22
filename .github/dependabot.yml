@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+
+  # `uv` here covers `uv.lock`, which holds the dev tools CI runs. The lockfile is committed, so without this the CI matrix keeps resolving to whatever was current the day it was written.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps"

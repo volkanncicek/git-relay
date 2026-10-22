@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+# The default for every job here. `github-release` overrides it below, and a job-level block replaces this one rather than adding to it.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        # setup-uv stopped publishing a moving major tag after v1, so this is the exact release. Dependabot bumps it.
+        uses: astral-sh/setup-uv@v10.1.0
+
+      - name: Install dependencies
+        # `--locked` fails instead of silently re-resolving, so a dependency change committed without its lockfile update cannot pass green.
+        run: uv sync --locked
+
+      - name: Check the tag against the version being released
+        # A tag that disagrees with pyproject attaches a wheel whose version contradicts the release it sits on.
+        run: |
+          tagged="${GITHUB_REF_NAME#v}"
+          declared="$(uv run python -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          if [ "$tagged" != "$declared" ]; then echo "Tag $GITHUB_REF_NAME does not match the declared version $declared"; exit 1; fi
+
+      - name: Verify
+        # CI runs on main, not on tags, so without this a tag could release a commit nothing ever checked.
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run ty check
+          uv run pytest
+
+      - name: Build
+        run: uv build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # The only write this workflow performs, and it is confined to this job.
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # The notes are this version's CHANGELOG section: everything after its heading, stopping at the next version heading or at the link definitions that close the file. The second awk drops the blank lines the heading leaves behind.
+          awk -v v="## [$version]" 'index($0,v)==1{f=1;next} f&&(/^## \[/||/^\[[^]]+\]: /){exit} f' CHANGELOG.md | awk 'NF{p=1} p' > notes.md
+          # An empty section means the tag and the CHANGELOG disagree, which is worth failing on rather than publishing a release with no notes.
+          if [ ! -s notes.md ]; then echo "CHANGELOG.md has no section for $version"; exit 1; fi
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file notes.md

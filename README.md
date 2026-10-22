@@ -121,7 +121,7 @@ That is the worst kind of failure for a deployment target, so the tool reads the
 uv run pytest
 ```
 
-Tests run against real git repositories rather than mocks, because the behaviour under test is git's. Every guard has a test for the failure it prevents.
+Tests run against real git repositories rather than mocks, because the behaviour under test is git's. Every guard has a test for the failure it prevents. [CONTRIBUTING.md](CONTRIBUTING.md) has the full set of checks CI runs; [SECURITY.md](SECURITY.md) says what the tool touches and how to report a vulnerability.
 
 ## Licence
 
