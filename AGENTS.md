@@ -10,15 +10,21 @@ Both hops are plain git over SSH. `.git/` is never copied and nothing is rsynced
 git_relay.py            the whole tool, one module, no runtime dependencies
 tests/test_git_relay.py real git repos in tmp_path, no mocks
 examples/target.toml    the config template
-pyproject.toml          packaging + the pytest dev dependency
+pyproject.toml          packaging, the dev tools (pytest, ruff, ty) and their config
+.github/workflows/      ci.yml on every push and PR; release.yml turns a v* tag into a GitHub release
+CHANGELOG.md            the release notes; release.yml copies the tagged version's section
 ```
 
-Config lives in `~/.config/git-relay/<target>.toml`, **not** in this checkout. `GIT_RELAY_CONFIG_DIR` overrides it, which is what the tests use.
+Config lives in `$XDG_CONFIG_HOME/git-relay/<target>.toml` (default `~/.config`), **not** in this checkout. `GIT_RELAY_CONFIG_DIR` overrides both, which is what the tests use.
 
 ```bash
-uv run pytest          # all of it, a few seconds on Linux
-uv tool install .      # puts `git-relay` on PATH
+uv run pytest                    # all of it
+uv run ruff check . && uv run ruff format --check . && uv run ty check   # the rest of what CI runs
+uv tool install .                # puts `git-relay` on PATH
+git-relay <target> --dry-run     # safe: fetches are real, nothing is pushed or rebased
 ```
+
+Before changing the config schema, target naming, or output format: callers drive this tool non-interactively from schedulers and wrapper scripts, and parse or log its output. Treat any of the three as a breaking change, because a silent downstream break costs hours.
 
 ## The invariants
 
@@ -39,8 +45,10 @@ uv tool install .      # puts `git-relay` on PATH
 - **`git config --get` exits 1 for an unset key.** Not an error worth surfacing; read the value, ignore the status.
 - **Git identity may come from an `includeIf` on a path pattern.** Under a tmp directory no rule matches and `git rebase` fails with "Committer identity unknown". Test fixtures set identity in each repo's own config; do not rely on the ambient environment.
 - **Windows paths in `GIT_SSH_COMMAND` need forward slashes.** A backslash is an escape character to ssh, not a separator. `_ssh_command` uses `Path.as_posix()` for exactly this.
-- **The test suite is ~25x slower on Windows** (~2 min vs ~5 s) because of NTFS plus Defender. Both platforms are expected to pass; develop on whichever is convenient and check the other before releasing.
+- **Read subprocess output with `encoding="utf-8"`, never `text=True`.** `text=True` decodes with the locale code page, cp1252 on Windows, which cannot decode every UTF-8 byte git writes in a commit message; an emoji in a subject crashed the run. `test_a_non_ascii_commit_message_is_relayed` pins it.
+- **`.gitattributes` forces LF on every file, on purpose.** `git_relay.py` is executable and carries a shebang, so a CRLF checkout makes it fail with "bad interpreter" on Linux and WSL; the file's own comment gives the second reason.
+- **The test suite is far slower on Windows than on Linux** because of NTFS plus Defender. Both platforms are expected to pass; develop on whichever is convenient and check the other before releasing.
 
 ## Style
 
-Comments explain *why*, especially where the code looks over-careful: nearly every guard exists because its failure was reproduced first. When adding one, reproduce the failure in a test before writing the fix, and say in the comment what was measured.
+Comments explain *why*, especially where the code looks over-careful: nearly every guard exists because its failure was reproduced first. When adding one, reproduce the failure in a test before writing the fix, and name in the comment the failure that was reproduced. Do not shorten or delete one of those comments: they are the reason the guards survive refactors, so this repo is a deliberate exception to any comment-volume rule an agent brings with it.

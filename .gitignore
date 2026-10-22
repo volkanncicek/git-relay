@@ -3,6 +3,9 @@
 .env
 .git-credentials
 
+# Machine-specific agent notes; they name private paths that do not belong in a public repo or its sdist.
+*.local.md
+
 .venv/
 
 __pycache__/
