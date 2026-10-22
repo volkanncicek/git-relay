@@ -10,6 +10,7 @@ reproduced first.
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -392,6 +393,27 @@ def test_second_run_is_refused_while_the_first_holds_the_lock(monkeypatch, tmp_p
         git_relay.TargetLock("t"),
     ):
         pass
+
+
+def test_a_second_process_is_refused_while_the_first_holds_the_lock(
+    monkeypatch, tmp_path
+):
+    """The test above takes both locks in one process, so it cannot see what the lock
+    file is named after. On Windows the name carried the pid, every process locked a
+    file of its own, and two relays for the same target ran at once."""
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setenv("TEMP", str(tmp_path))
+    second = (
+        "import git_relay, sys\n"
+        "try:\n"
+        "    with git_relay.TargetLock('t'):\n"
+        "        sys.exit(0)\n"
+        "except git_relay.Abort:\n"
+        "    sys.exit(3)\n"
+    )
+    with git_relay.TargetLock("t"):
+        proc = subprocess.run([sys.executable, "-c", second], check=False)
+    assert proc.returncode == 3, "a second process took the lock the first one holds"
 
 
 def test_lock_is_released_after_the_block(monkeypatch, tmp_path):

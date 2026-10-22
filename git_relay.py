@@ -37,6 +37,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import getpass
 import os
 import shlex
 import subprocess
@@ -193,8 +194,12 @@ class TargetLock:
         base = Path(
             os.environ.get("XDG_RUNTIME_DIR") or os.environ.get("TEMP") or "/tmp"
         )
-        uid = os.getpid() if sys.platform == "win32" else os.getuid()  # nt has no uid
-        self.path = base / f"git-relay-{name}.{uid}.lock"
+        # The name must be the same for every process of one user, or each process
+        # locks a file of its own. Windows has no uid, and the pid that stood in for it
+        # did exactly that: two relays for one target ran at once. The user name is the
+        # stable identity there; POSIX keeps the uid, which an environment cannot fake.
+        owner = getpass.getuser() if sys.platform == "win32" else os.getuid()
+        self.path = base / f"git-relay-{name}.{owner}.lock"
         self._fd: int | None = None
 
     def __enter__(self) -> Self:
