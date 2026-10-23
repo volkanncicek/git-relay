@@ -331,6 +331,18 @@ def test_host_tracking_ref_follows_origin(world):
     assert "ahead" not in run(world.host, "status", "-sb")
 
 
+def test_a_host_left_behind_by_an_interrupted_run_catches_up(world):
+    """A run that dies between the push to origin and the push to the host leaves
+    nothing outgoing for the next one. The host push looks skippable in that state,
+    and skipping it strands the host on old code with every later run agreeing that
+    there is nothing to do."""
+    commit(world.ws, "w.txt")
+    run(world.ws, "push", "origin", "master")
+    assert not (world.host / "w.txt").exists()
+    git_relay.sync(world.target, dry_run=False)
+    assert (world.host / "w.txt").exists()
+
+
 def test_a_non_ascii_commit_message_is_relayed(world):
     """git writes commit messages as UTF-8, but `text=True` decodes with the locale's
     code page. On a cp1252 Windows box the 0x8D byte inside this emoji has no mapping,
