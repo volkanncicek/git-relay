@@ -291,6 +291,22 @@ def test_missing_remote_tracking_ref_is_named(world, tmp_path):
         git_relay.preflight_local(world.target)
 
 
+def test_origin_head_outranks_the_main_master_guess(world):
+    """A target without [sync] branch syncs whatever origin calls default. A local
+    `main` must not win over it, or the relay pushes a branch origin never chose."""
+    run(world.ws, "branch", "main")
+    assert git_relay.detect_branch(world.ws) == "master"
+
+
+def test_an_undetectable_branch_points_at_the_config_key(tmp_path):
+    repo = tmp_path / "r"
+    repo.mkdir()
+    run(repo, "init", "-b", "trunk")
+    commit(repo, "z.txt")
+    with pytest.raises(git_relay.Abort, match=r"set \[sync\] branch"):
+        git_relay.detect_branch(repo)
+
+
 # --------------------------------------------------------------------------------
 # sync
 # --------------------------------------------------------------------------------
