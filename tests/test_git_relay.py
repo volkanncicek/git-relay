@@ -9,6 +9,7 @@ reproduced first.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -290,6 +291,22 @@ def test_missing_remote_tracking_ref_is_named(world, tmp_path):
         git_relay.preflight_local(world.target)
 
 
+def test_origin_head_outranks_the_main_master_guess(world):
+    """A target without [sync] branch syncs whatever origin calls default. A local
+    `main` must not win over it, or the relay pushes a branch origin never chose."""
+    run(world.ws, "branch", "main")
+    assert git_relay.detect_branch(world.ws) == "master"
+
+
+def test_an_undetectable_branch_points_at_the_config_key(tmp_path):
+    repo = tmp_path / "r"
+    repo.mkdir()
+    run(repo, "init", "-b", "trunk")
+    commit(repo, "z.txt")
+    with pytest.raises(git_relay.Abort, match=r"set \[sync\] branch"):
+        git_relay.detect_branch(repo)
+
+
 # --------------------------------------------------------------------------------
 # sync
 # --------------------------------------------------------------------------------
@@ -328,6 +345,18 @@ def test_host_tracking_ref_follows_origin(world):
         world.origin, "rev-parse", "master"
     )
     assert "ahead" not in run(world.host, "status", "-sb")
+
+
+def test_a_host_left_behind_by_an_interrupted_run_catches_up(world):
+    """A run that dies between the push to origin and the push to the host leaves
+    nothing outgoing for the next one. The host push looks skippable in that state,
+    and skipping it strands the host on old code with every later run agreeing that
+    there is nothing to do."""
+    commit(world.ws, "w.txt")
+    run(world.ws, "push", "origin", "master")
+    assert not (world.host / "w.txt").exists()
+    git_relay.sync(world.target, dry_run=False)
+    assert (world.host / "w.txt").exists()
 
 
 def test_a_non_ascii_commit_message_is_relayed(world):
@@ -377,6 +406,103 @@ def test_missing_required_key_names_the_key(tmp_path, monkeypatch):
     (tmp_path / "x.toml").write_text('[remote]\nhost = "h"\n', encoding="utf-8")
     with pytest.raises(git_relay.Abort, match=r"\[remote\] user"):
         git_relay.load_target("x")
+
+
+# --------------------------------------------------------------------------------
+# CLI -- the contract schedulers and wrapper scripts parse
+# --------------------------------------------------------------------------------
+
+# Every line a caller logs or greps has this shape. The timestamp carries no zone and
+# no colour, because a captured log is read by a person or a regex, never a terminal.
+_LINE = re.compile(
+    r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] \[(INFO|WARN|SUCCESS|ERROR)\] "
+)
+
+
+@pytest.fixture
+def configured(world, tmp_path, monkeypatch):
+    """`world` reached through a real TOML file, so main() runs the path a caller does.
+
+    Paths go in as POSIX strings: a Windows path in a TOML basic string turns its
+    backslashes into escape sequences.
+    """
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    key = world.target.remote_ssh_key.as_posix()
+    (cfg / "t.toml").write_text(
+        f'[remote]\nhost = "ignored"\nuser = "ignored"\npath = "{world.host.as_posix()}"\n'
+        f'ssh_key = "{key}"\n'
+        f'[local]\npath = "{world.ws.as_posix()}"\ngit_ssh_key = "{key}"\n'
+        '[sync]\nbranch = "master"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GIT_RELAY_CONFIG_DIR", str(cfg))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setenv("TEMP", str(tmp_path))
+    # Decided once at import from whatever stdout pytest had then; pinned so the test
+    # asserts the captured-output contract rather than the terminal it happens to run in.
+    monkeypatch.setattr(git_relay, "_TTY", False)
+    # `_log` binds its default stream when the module is imported, which under pytest
+    # is the session's own capture object: info() and ok() lines reached neither capsys
+    # nor capfd. Rebinding it to sys.stdout as it is here fails too, because pytest
+    # captures setup and call separately and that object is closed before the test
+    # body runs. Resolving sys.stdout on every write is what reaches capsys.
+    monkeypatch.setattr(git_relay._log, "__defaults__", (_CurrentStdout(),))
+    return world
+
+
+class _CurrentStdout:
+    def write(self, text: str) -> int:
+        return sys.stdout.write(text)
+
+    def flush(self) -> None:
+        sys.stdout.flush()
+
+
+def test_a_successful_run_exits_0_with_parseable_lines(configured, capsys):
+    commit(configured.ws, "w.txt")
+    assert git_relay.main(["t"]) == 0
+    out, err = capsys.readouterr()
+    lines = out.splitlines()
+    assert lines and all(_LINE.match(line) for line in lines), out
+    assert "\033" not in out + err
+    assert lines[-1].endswith("[SUCCESS] Sync completed for t")
+
+
+def test_a_refusal_exits_1_with_the_error_on_stderr(configured, capsys):
+    (configured.ws / "a.txt").write_text("modified", encoding="utf-8")
+    assert git_relay.main(["t"]) == 1
+    out, err = capsys.readouterr()
+    error = [line for line in err.splitlines() if "[ERROR]" in line]
+    assert error and _LINE.match(error[0]), err
+    assert "uncommitted tracked changes" in error[0]
+    assert "[ERROR]" not in out
+
+
+def test_an_unknown_target_exits_1(configured, capsys):
+    assert git_relay.main(["nope"]) == 1
+    assert "No config for target 'nope'" in capsys.readouterr().err
+
+
+def test_no_target_exits_2():
+    assert git_relay.main([]) == 2
+
+
+def test_an_interrupt_exits_130(configured, monkeypatch):
+    def interrupted(*_a, **_k):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(git_relay, "sync", interrupted)
+    assert git_relay.main(["t"]) == 130
+
+
+def test_list_names_targets_and_exits_1_when_there_are_none(
+    configured, tmp_path, monkeypatch, capsys
+):
+    assert git_relay.main(["--list"]) == 0
+    assert "  t" in capsys.readouterr().out.splitlines()
+    monkeypatch.setenv("GIT_RELAY_CONFIG_DIR", str(tmp_path / "empty"))
+    assert git_relay.main(["--list"]) == 1
 
 
 # --------------------------------------------------------------------------------
