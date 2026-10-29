@@ -27,7 +27,7 @@ jobs:
 
       - name: Install uv
         # setup-uv stopped publishing a moving major tag after v1, so this is the exact release. Dependabot bumps it.
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
 
