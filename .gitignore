@@ -23,3 +23,18 @@ __pycache__/
 
 .DS_Store
 Thumbs.db
+
+# JetBrains
+.idea/
+
+# Notes
+*.local.md
+
+# Claude Code
+.claude/settings.local.json
+.mcp.json
+.claude/settings.json
+.claude/CLAUDE.md
+
+# CodeGraph
+.codegraph/
